@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="testbBroadcast:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/testbBroadcast_jar</output-path>
+    <root id="archive" name="testbBroadcast.jar">
+      <element id="module-output" name="testbBroadcast" />
+    </root>
+  </artifact>
+</component>
