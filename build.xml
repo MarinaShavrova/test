@@ -1,0 +1,840 @@
+<!-- 
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to You under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+    
+       http://www.apache.org/licenses/LICENSE-2.0
+    
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+-->
+<project name="ant-jmeter" default="easy">
+    <description>
+
+        Sample build file for use with ant-jmeter.jar
+        See http://www.programmerplanet.org/pages/projects/jmeter-ant-task.php
+
+    To run a test and create the output report:
+        ant -Dtest=script
+
+    To run a test only:
+        ant -Dtest=script run
+
+    To run report on existing test output
+        ant -Dtest=script report
+
+    The "script" parameter is the name of the script without the .jmx suffix.
+
+    Additional options:
+        -Dshow-data=y - include response data in Failure Details
+        -Dtestpath=xyz - path to test file(s) (default user.dir).
+                         N.B. Ant interprets relative paths against the build file
+        -Djmeter.home=.. - path to JMeter home directory (defaults to parent of this build file)
+        -Dreport.title="My Report" - title for html report (default is 'Load Test Results')
+
+        Deprecated:
+        -Dformat=2.0 - use version 2.0 JTL files rather than 2.1
+
+    </description>
+    <property name="testpath" value="${user.dir}"/>
+    <!-- path Jmeter default-->
+    <property name="jmeter.home" value="/hudson/jmeter"/>
+    <property name="report.title" value="Test Results"/>
+    <!-- Name of test (without .jmx) -->
+    <property name="test" value="*"/>
+    <!-- Should report include response data for failures? -->
+    <property name="show-data" value="n"/>
+    <property name="format" value="2.1"/>
+    <condition property="style_version" value="">
+        <equals arg1="${format}" arg2="2.0"/>
+    </condition>
+    <condition property="style_version" value="_21">
+        <equals arg1="${format}" arg2="2.1"/>
+    </condition>
+    <condition property="funcMode">
+        <equals arg1="${show-data}" arg2="y"/>
+    </condition>
+    <condition property="funcMode" value="false">
+        <not>
+            <equals arg1="${show-data}" arg2="y"/>
+        </not>
+    </condition>
+    <!-- Allow jar to be picked up locally -->
+    <path id="ant.jmeter.classpath">
+        <pathelement location="${jmeter.home}/extras/ant-jmeter-1.1.1.jar"/>
+    </path>
+    <taskdef name="jmeter" classname="org.programmerplanet.ant.taskdefs.jmeter.JMeterTask" classpathref="ant.jmeter.classpath"/>
+    <!-- ************************************* easy ************************************* -->
+    <target name="easy" depends="easy-run,easy-report"/>
+    <target name="easy-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="easy-run" depends="easy-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="easy-report" depends="easy-xslt-report,easy-copy-images">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="easy-xslt-report" depends="easy-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="easy-copy-images" depends="easy-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="easy-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="easy-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* average ************************************* -->
+    <target name="average" depends="average-run,average-report"/>
+    <target name="average-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="average-run" depends="average-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+            <!-- Force suitable defaults -->
+            <property name="jmeter.save.saveservice.response_data" value="true"/>
+            <property name="jmeter.save.saveservice.samplerData" value="true"/>
+            <property name="jmeter.save.saveservice.responseHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.requestHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.encoding" value="true"/>
+            <property name="jmeter.save.saveservice.url" value="true"/>
+            <property name="jmeter.save.saveservice.filename" value="true"/>
+            <property name="jmeter.save.saveservice.hostname" value="true"/>
+            <property name="jmeter.save.saveservice.thread_counts" value="true"/>
+            <property name="jmeter.save.saveservice.sample_count" value="true"/>
+            <property name="jmeter.save.saveservice.idle_time" value="true"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <target name="average-graph">
+        <echo>Create graph</echo>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesOverTime.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesOverTime --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ThroughputVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ThroughputVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TimesVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TimesVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TransactionsPerSecond.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TransactionsPerSecond --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesPercentiles.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesPercentiles --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesDistribution.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesDistribution --width 1280 --height 720"/>
+        </java>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+        <copy todir="${testpath}/results/html/js" overwrite="true">
+            <fileset dir="${jmeter.home}/extras/js"/>
+        </copy>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="average-report" depends="average-xslt-report,average-copy-images,average-graph">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="average-xslt-report" depends="average-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <!-- detail -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/detail.html" style="${jmeter.home}/extras/jmeter-results-shanhe-me-err.xsl">
+            <param name="showData" expression="${show-data}"/>
+        </xslt>
+        <xslt force="true" in="${testpath}/test/${reportName}.jmx" out="${testpath}/results/html/testplan.html" style="${jmeter.home}/extras/schematic.xsl"></xslt>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="average-copy-images" depends="average-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="average-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="average-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* heavy ************************************* -->
+    <target name="heavy" depends="heavy-run,heavy-report"/>
+    <target name="heavy-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="heavy-run" depends="heavy-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+            <!-- Force suitable defaults -->
+            <property name="jmeter.save.saveservice.response_data" value="true"/>
+            <property name="jmeter.save.saveservice.samplerData" value="true"/>
+            <property name="jmeter.save.saveservice.responseHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.requestHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.encoding" value="true"/>
+            <property name="jmeter.save.saveservice.url" value="true"/>
+            <property name="jmeter.save.saveservice.filename" value="true"/>
+            <property name="jmeter.save.saveservice.hostname" value="true"/>
+            <property name="jmeter.save.saveservice.thread_counts" value="true"/>
+            <property name="jmeter.save.saveservice.sample_count" value="true"/>
+            <property name="jmeter.save.saveservice.idle_time" value="true"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <target name="heavy-graph">
+        <echo>Create graph</echo>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesOverTime.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesOverTime --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ThroughputVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ThroughputVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TimesVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TimesVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TransactionsPerSecond.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TransactionsPerSecond --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesPercentiles.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesPercentiles --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesDistribution.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesDistribution --width 1280 --height 720"/>
+        </java>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+        <copy todir="${testpath}/results/html/js" overwrite="true">
+            <fileset dir="${jmeter.home}/extras/js"/>
+        </copy>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="heavy-report" depends="heavy-xslt-report,heavy-copy-images,heavy-graph">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="heavy-xslt-report" depends="heavy-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <!-- detail -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/detail.html" style="${jmeter.home}/extras/jmeter-results-shanhe-me.xsl">
+            <param name="showData" expression="${show-data}"/>
+        </xslt>
+        <xslt force="true" in="${testpath}/test/${reportName}.jmx" out="${testpath}/results/html/testplan.html" style="${jmeter.home}/extras/schematic.xsl"></xslt>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="heavy-copy-images" depends="heavy-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="heavy-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="heavy-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* functional ************************************* -->
+    <target name="functional" depends="functional-run,functional-report"/>
+    <target name="functional-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="functional-run" depends="functional-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+            <!-- Force suitable defaults -->
+            <property name="jmeter.save.saveservice.response_data" value="true"/>
+            <property name="jmeter.save.saveservice.samplerData" value="true"/>
+            <property name="jmeter.save.saveservice.responseHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.requestHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.encoding" value="true"/>
+            <property name="jmeter.save.saveservice.url" value="true"/>
+            <property name="jmeter.save.saveservice.filename" value="true"/>
+            <property name="jmeter.save.saveservice.hostname" value="true"/>
+            <property name="jmeter.save.saveservice.thread_counts" value="true"/>
+            <property name="jmeter.save.saveservice.sample_count" value="true"/>
+            <property name="jmeter.save.saveservice.idle_time" value="true"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="functional-report" depends="functional-xslt-report,functional-copy-images">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="functional-xslt-report" depends="functional-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <!-- detail -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/detail.html" style="${jmeter.home}/extras/jmeter-results-shanhe-me.xsl">
+            <param name="showData" expression="${show-data}"/>
+        </xslt>
+        <xslt force="true" in="${testpath}/test/${reportName}.jmx" out="${testpath}/results/html/testplan.html" style="${jmeter.home}/extras/schematic.xsl"></xslt>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="functional-copy-images" depends="functional-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="functional-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="functional-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* load ************************************* -->
+    <target name="load" depends="load-run,load-report"/>
+    <target name="load-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="load-run" depends="load-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+            <!-- Force suitable defaults -->
+            <property name="jmeter.save.saveservice.thread_counts" value="true"/>
+            <property name="jmeter.save.saveservice.sample_count" value="true"/>
+            <property name="jmeter.save.saveservice.idle_time" value="true"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <target name="load-graph">
+        <echo>Create graph</echo>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesOverTime.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesOverTime --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ThroughputVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ThroughputVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TimesVsThreads.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TimesVsThreads --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/TransactionsPerSecond.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type TransactionsPerSecond --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesPercentiles.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesPercentiles --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseTimesDistribution.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseTimesDistribution --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/HitsPerSecond.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type HitsPerSecond --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/ResponseCodesPerSecond.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type ResponseCodesPerSecond --width 1280 --height 720"/>
+        </java>
+        <java jar="${jmeter.home}/lib/ext/CMDRunner.jar" fork="true">
+            <arg line="--tool Reporter --generate-png ${testpath}/results/html/LatenciesOverTime.png --input-jtl ${testpath}/results/jtl/${reportName}.jtl --plugin-type LatenciesOverTime --width 1280 --height 720"/>
+        </java>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+        <copy todir="${testpath}/results/html/js" overwrite="true">
+            <fileset dir="${jmeter.home}/extras/js"/>
+        </copy>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="load-report" depends="load-xslt-report,load-copy-images,load-graph">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="load-xslt-report" depends="load-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2_load.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <xslt force="true" in="${testpath}/test/${reportName}.jmx" out="${testpath}/results/html/testplan.html" style="${jmeter.home}/extras/schematic.xsl"></xslt>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="detail.html"/>
+            </fileset>
+        </copy>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="load-copy-images" depends="load-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="load-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="load-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* secure ************************************* -->
+    <target name="secure" depends="secure-run,secure-report"/>
+    <target name="secure-clean">
+        <!--delete old report-->
+        <echo>Delete old report</echo>
+        <delete dir="${testpath}/results/"/>
+        <mkdir dir="${testpath}/results/jtl"/>
+        <mkdir dir="${testpath}/results/html"/>
+        <mkdir dir="${testpath}/results/tap"/>
+    </target>
+    <target name="secure-run" depends="secure-clean">
+        <echo>funcMode = ${funcMode}</echo>
+        <!--
+            <jvmarg value="-Xincgc"/>
+            <jvmarg value="-Xmx128m"/>
+            <jvmarg value="-Dproperty=value"/>
+            <jmeterarg value="-qextra.properties"/>
+        -->
+        <!-- Force suitable defaults -->
+        <jmeter jmeterhome="${jmeter.home}" resultlogdir="${testpath}/results/jtl">
+            <!--<testplans dir="${testpath}" includes="*.jmx"/>-->
+            <testplans dir="${testpath}/test" includes="*.jmx"/>
+            <property name="jmeter.save.saveservice.output_format" value="xml"/>
+            <property name="jmeter.save.saveservice.assertion_results" value="all"/>
+            <property name="jmeter.save.saveservice.bytes" value="true"/>
+            <property name="file_format.testlog" value="${format}"/>
+            <property name="jmeter.save.saveservice.response_data.on_error" value="${funcMode}"/>
+            <property name="thread" value="${thread}"/>
+            <property name="loop" value="${loop}"/>
+            <property name="time" value="${time}"/>
+            <property name="url" value="${url}"/>
+            <property name="port" value="${port}"/>
+            <property name="password" value="${password}"/>
+            <property name="key1" value="${key1}"/>
+            <property name="key2" value="${key2}"/>
+            <property name="key3" value="${key3}"/>
+            <!-- Force suitable defaults -->
+            <property name="jmeter.save.saveservice.response_data" value="true"/>
+            <property name="jmeter.save.saveservice.responseHeaders" value="true"/>
+            <property name="jmeter.save.saveservice.encoding" value="true"/>
+            <property name="jmeter.save.saveservice.url" value="true"/>
+            <property name="jmeter.save.saveservice.filename" value="true"/>
+            <property name="jmeter.save.saveservice.hostname" value="true"/>
+            <property name="jmeter.save.saveservice.thread_counts" value="true"/>
+            <property name="jmeter.save.saveservice.sample_count" value="true"/>
+            <property name="jmeter.save.saveservice.idle_time" value="true"/>
+        </jmeter>
+        <!-- Get file name -->
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <echo message="file_name:${reportName}"/>
+    </target>
+    <property name="lib.dir" value="${jmeter.home}/lib"/>
+    <!-- Use xalan copy from JMeter lib directory to ensure consistent processing with Java 1.4+ -->
+    <path id="xslt.classpath">
+        <fileset dir="${lib.dir}" includes="xalan*.jar"/>
+        <fileset dir="${lib.dir}" includes="serializer*.jar"/>
+    </path>
+    <target name="secure-report" depends="secure-xslt-report,secure-copy-images">
+        <echo>Report generated at ${report.datestamp}</echo>
+    </target>
+    <target name="secure-xslt-report" depends="secure-message_xalan">
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyy/MM/dd HH:mm"/>
+        </tstamp>
+        <!-- <xslt classpathref="xslt.classpath" force="true" basedir="results/jtl" destdir="results/html" includes="*.jtl" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl"> -->
+        <!-- index -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/index.html" style="${jmeter.home}/extras/jmeter-results-detail-report_21_frame_v2.xsl">
+            <!--
+jmeter-results-detail-report_21.xsl
+jmeter-results-detail-report_21_local.xsl
+jmeter-results-report_21.xsl
+jmeter-results-shanhe-me.xsl
+-->
+            <param name="showData" expression="${show-data}"/>
+            <param name="titleReport" expression="${report.title}"/>
+            <param name="dateReport" expression="${report.datestamp}"/>
+        </xslt>
+        <!-- detail -->
+        <xslt classpathref="xslt.classpath" force="true" in="${testpath}/results/jtl/${reportName}.jtl" out="${testpath}/results/html/detail.html" style="${jmeter.home}/extras/jmeter-results-shanhe-me.xsl">
+            <param name="showData" expression="${show-data}"/>
+        </xslt>
+        <xslt force="true" in="${testpath}/test/${reportName}.jmx" out="${testpath}/results/html/testplan.html" style="${jmeter.home}/extras/schematic.xsl"></xslt>
+        <copy todir="${testpath}/results/html" overwrite="true">
+            <fileset dir="${jmeter.home}/extras">
+                <include name="*.png"/>
+            </fileset>
+        </copy>
+    </target>
+    <!-- Copy report images if needed -->
+    <target name="secure-copy-images" depends="secure-verify-images" unless="samepath">
+        <copy file="${basedir}/expand.png" tofile="${testpath}/expand.png"/>
+        <copy file="${basedir}/collapse.png" tofile="${testpath}/collapse.png"/>
+    </target>
+    <target name="secure-verify-images">
+        <condition property="samepath">
+            <equals arg1="${testpath}" arg2="${basedir}"/>
+        </condition>
+    </target>
+    <!-- Check that the xalan libraries are present -->
+    <condition property="xalan.present">
+        <and>
+            <!-- No need to check all jars; just check a few -->
+            <available classpathref="xslt.classpath" classname="org.apache.xalan.processor.TransformerFactoryImpl"/>
+            <available classpathref="xslt.classpath" classname="org.apache.xml.serializer.ExtendedContentHandler"/>
+        </and>
+    </condition>
+    <target name="secure-message_xalan" unless="xalan.present">
+        <echo>Cannot find all xalan and/or serialiser jars</echo>
+        <echo>The XSLT formatting may not work correctly.</echo>
+        <echo>Check you have xalan and serializer jars in ${lib.dir}</echo>
+    </target>
+    <!-- ************************************* load-zip ************************************* -->
+    <target name="load-zip">
+        <echo>zip JTL</echo>
+        <fileset id="dist.contents" dir="${testpath}/results/jtl">
+            <include name= "*.jtl"/>
+        </fileset>
+        <tstamp>
+            <format property="report.datestamp" pattern="yyyyMMddHHmm"/>
+        </tstamp>
+        <property name="prop.dist.contents" refid="dist.contents"/>
+        <basename property="property.for.dirname" file="${basedir}"/>
+        <basename property="reportName" file="${basedir}/${prop.dist.contents}" suffix=".jtl"/>
+        <zip destfile="/hudson/arc/${property.for.dirname}/${reportName}_${report.datestamp}.zip" basedir="${testpath}/results/jtl"/>
+        <!-- <delete file="${testpath}/results/jtl/${reportName}.jtl"/> -->
+    </target>
+</project>
